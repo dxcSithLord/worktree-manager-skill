@@ -2,10 +2,13 @@
 # cleanup.sh - Full cleanup of a worktree (ports, directory, registry, optionally branch)
 #
 # Usage: ./cleanup.sh <project> <branch> [--delete-branch]
+#        ./cleanup.sh --merged [--delete-branch]
 #
 # Examples:
 #   ./cleanup.sh obsidian-ai-agent feature/auth                    # Cleanup worktree only
 #   ./cleanup.sh obsidian-ai-agent feature/auth --delete-branch    # Also delete git branch
+#   ./cleanup.sh --merged                                          # Cleanup all merged worktrees
+#   ./cleanup.sh --merged --delete-branch                          # Also delete branches
 #
 # This script:
 # 1. Kills processes on allocated ports
@@ -17,16 +20,57 @@
 
 set -e
 
+REGISTRY="${HOME}/.claude/worktree-registry.json"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+# Handle --merged mode
+if [ "$1" = "--merged" ]; then
+    DELETE_BRANCH="${2:-}"
+
+    echo "Finding worktrees with merged PRs..."
+    echo "─────────────────────────────────────────────────────────"
+
+    CLEANED=0
+    SKIPPED=0
+
+    while IFS= read -r entry; do
+        [ -z "$entry" ] && continue
+
+        PROJECT=$(echo "$entry" | jq -r '.project')
+        BRANCH=$(echo "$entry" | jq -r '.branch')
+
+        # Check PR status
+        PR_INFO=$(gh pr list --head "$BRANCH" --state all --json number,state --limit 1 2>/dev/null || echo "[]")
+        PR_STATE=$(echo "$PR_INFO" | jq -r '.[0].state // "NONE"')
+        PR_NUM=$(echo "$PR_INFO" | jq -r '.[0].number // "?"')
+
+        if [ "$PR_STATE" = "MERGED" ]; then
+            echo ""
+            echo "Found merged: $PROJECT / $BRANCH (PR #$PR_NUM)"
+            "$SCRIPT_DIR/cleanup.sh" "$PROJECT" "$BRANCH" $DELETE_BRANCH
+            CLEANED=$((CLEANED + 1))
+        else
+            SKIPPED=$((SKIPPED + 1))
+        fi
+
+    done < <(jq -c '.worktrees[]' "$REGISTRY" 2>/dev/null)
+
+    echo ""
+    echo "─────────────────────────────────────────────────────────"
+    echo "Cleaned: $CLEANED worktrees"
+    echo "Skipped: $SKIPPED worktrees (not merged)"
+    exit 0
+fi
+
 PROJECT="$1"
 BRANCH="$2"
 DELETE_BRANCH="${3:-}"
 
 if [ -z "$PROJECT" ] || [ -z "$BRANCH" ]; then
     echo "Usage: $0 <project> <branch> [--delete-branch]"
+    echo "       $0 --merged [--delete-branch]"
     exit 1
 fi
-
-REGISTRY="${HOME}/.claude/worktree-registry.json"
 
 # Check jq is available
 if ! command -v jq &> /dev/null; then

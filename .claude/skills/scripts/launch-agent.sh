@@ -26,16 +26,17 @@ CONFIG_FILE="$SCRIPT_DIR/../config.json"
 # Load config (with defaults)
 if [ -f "$CONFIG_FILE" ] && command -v jq &> /dev/null; then
     TERMINAL=$(jq -r '.terminal // "ghostty"' "$CONFIG_FILE")
-    SHELL_CMD=$(jq -r '.shell // "bash"' "$CONFIG_FILE")
-    CLAUDE_CMD=$(jq -r '.claudeCommand // "claude --dangerously-skip-permissions"' "$CONFIG_FILE")
+    SHELL_CMD=$(jq -r '.shell // "fish"' "$CONFIG_FILE")
+    CLAUDE_CMD=$(jq -r '.claudeCommand // "cc"' "$CONFIG_FILE")
 else
     TERMINAL="ghostty"
-    SHELL_CMD="bash"
-    CLAUDE_CMD="claude --dangerously-skip-permissions"
+    SHELL_CMD="fish"
+    CLAUDE_CMD="cc"
 fi
 
-# Note: CLAUDE_CMD defaults to "claude --dangerously-skip-permissions" for autonomous operation
-# Users can customize in config.json (e.g., use an alias like "cc")
+# Note: CLAUDE_CMD (default "cc") is configurable in config.json
+# It runs inside the target shell (fish) which should have the alias defined
+# Falls back to "claude" if the alias/command fails
 
 # Expand ~ in path
 WORKTREE_PATH="${WORKTREE_PATH/#\~/$HOME}"
@@ -64,19 +65,20 @@ BRANCH=$(cd "$WORKTREE_PATH" && git branch --show-current 2>/dev/null || basenam
 PROJECT=$(basename "$(dirname "$WORKTREE_PATH")")
 
 # Build the command to run in the new terminal
-# For fish: use 'and'/'or' instead of '&&'/'||'
+# Use configured command (cc) - fish syntax compatible
+# For fish: use 'or' instead of '||' for fallback, and avoid subshells
 if [ "$SHELL_CMD" = "fish" ]; then
     if [ -n "$TASK" ]; then
-        INNER_CMD="cd '$WORKTREE_PATH'; and echo 'Worktree: $PROJECT / $BRANCH'; and echo 'Task: $TASK'; and echo ''; and $CLAUDE_CMD"
+        INNER_CMD="cd '$WORKTREE_PATH'; and echo '🌳 Worktree: $PROJECT / $BRANCH'; and echo '📋 Task: $TASK'; and echo ''; and $CLAUDE_CMD; or claude"
     else
-        INNER_CMD="cd '$WORKTREE_PATH'; and echo 'Worktree: $PROJECT / $BRANCH'; and echo ''; and $CLAUDE_CMD"
+        INNER_CMD="cd '$WORKTREE_PATH'; and echo '🌳 Worktree: $PROJECT / $BRANCH'; and echo ''; and $CLAUDE_CMD; or claude"
     fi
 else
     # bash/zsh syntax
     if [ -n "$TASK" ]; then
-        INNER_CMD="cd '$WORKTREE_PATH' && echo 'Worktree: $PROJECT / $BRANCH' && echo 'Task: $TASK' && echo '' && $CLAUDE_CMD"
+        INNER_CMD="cd '$WORKTREE_PATH' && echo '🌳 Worktree: $PROJECT / $BRANCH' && echo '📋 Task: $TASK' && echo '' && ($CLAUDE_CMD || claude)"
     else
-        INNER_CMD="cd '$WORKTREE_PATH' && echo 'Worktree: $PROJECT / $BRANCH' && echo '' && $CLAUDE_CMD"
+        INNER_CMD="cd '$WORKTREE_PATH' && echo '🌳 Worktree: $PROJECT / $BRANCH' && echo '' && ($CLAUDE_CMD || claude)"
     fi
 fi
 

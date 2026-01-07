@@ -1,6 +1,6 @@
 ---
 name: worktree-manager
-description: Create, manage, and cleanup git worktrees with Claude Code agents across all projects. USE THIS SKILL when user says "create worktree", "spin up worktrees", "new worktree for X", "worktree status", "cleanup worktrees", or wants parallel development branches. Handles worktree creation, dependency installation, validation, agent launching in Ghostty, and global registry management.
+description: Create, manage, and cleanup git worktrees with Claude Code agents across all projects. USE THIS SKILL when user says "create worktree", "spin up worktrees", "new worktree for X", "worktree status", "cleanup worktrees", "sync worktrees", or wants parallel development branches. Also use when creating PRs from a worktree branch (to update registry with PR number). Handles worktree creation, dependency installation, validation, agent launching in Ghostty, and global registry management.
 ---
 
 # Global Worktree Manager
@@ -20,6 +20,8 @@ Manage parallel development across ALL projects using git worktrees with Claude 
 - "clean up merged worktrees"
 - "clean up the auth worktree"
 - "launch agent in worktree X"
+- "sync worktrees" / "sync worktree registry"
+- "create PR" (when in a worktree - updates registry with PR number)
 
 ---
 
@@ -342,7 +344,7 @@ If `launch-agent.sh` fails:
 
 **For Ghostty:**
 ```bash
-open -na "Ghostty.app" --args -e bash -c "cd '$WORKTREE_PATH' && claude --dangerously-skip-permissions"
+open -na "Ghostty.app" --args -e fish -c "cd '$WORKTREE_PATH' && claude"
 ```
 
 **For iTerm2:**
@@ -353,7 +355,7 @@ osascript -e 'tell application "iTerm2" to create window with default profile' \
 
 **For tmux:**
 ```bash
-tmux new-session -d -s "wt-$PROJECT-$BRANCH_SLUG" -c "$WORKTREE_PATH" "bash -c 'claude --dangerously-skip-permissions'"
+tmux new-session -d -s "wt-$PROJECT-$BRANCH_SLUG" -c "$WORKTREE_PATH" "fish -c 'claude'"
 ```
 
 ### 4. Cleanup Worktree
@@ -396,6 +398,41 @@ done
 # 6. Optionally delete branch
 git branch -D feature/auth
 git push origin --delete feature/auth
+```
+
+### 5. Create PR from Worktree
+
+When creating a PR from a worktree branch, update the registry with the PR number:
+
+```bash
+# After gh pr create succeeds, get the PR number
+BRANCH=$(git branch --show-current)
+PR_NUM=$(gh pr view --json number -q '.number')
+
+# Update registry with PR number
+if [ -n "$PR_NUM" ] && [ -f ~/.claude/worktree-registry.json ]; then
+    TMP=$(mktemp)
+    jq "(.worktrees[] | select(.branch == \"$BRANCH\")).prNumber = $PR_NUM" \
+      ~/.claude/worktree-registry.json > "$TMP" && mv "$TMP" ~/.claude/worktree-registry.json
+    echo "Updated worktree registry with PR #$PR_NUM"
+fi
+```
+
+This enables `cleanup.sh --merged` to automatically find and clean up worktrees after their PRs are merged.
+
+### 6. Sync Registry
+
+Reconcile registry with actual worktrees and PR status:
+
+```bash
+# Check status (no changes)
+~/.claude/skills/worktree-manager/scripts/sync.sh
+
+# Auto-fix issues (update PR numbers, remove missing entries)
+~/.claude/skills/worktree-manager/scripts/sync.sh --fix
+
+# Quiet mode (only show problems)
+~/.claude/skills/worktree-manager/scripts/sync.sh --quiet
 ```
 
 ---
@@ -552,6 +589,24 @@ Scripts are in `~/.claude/skills/worktree-manager/scripts/`
 ~/.claude/skills/worktree-manager/scripts/cleanup.sh <project> <branch> [--delete-branch]
 # Kills ports, removes worktree, updates registry
 # --delete-branch also removes local and remote git branches
+
+# Or cleanup ALL merged worktrees at once:
+~/.claude/skills/worktree-manager/scripts/cleanup.sh --merged [--delete-branch]
+# Finds all worktrees with merged PRs and cleans them up
+```
+
+### sync.sh
+```bash
+~/.claude/skills/worktree-manager/scripts/sync.sh [--quiet] [--fix]
+# Reconciles registry with actual worktrees and PR status
+# --quiet: Only show issues, not OK entries
+# --fix: Automatically remove missing entries and update PR numbers/status
+
+# Example: Check status without changing anything
+~/.claude/skills/worktree-manager/scripts/sync.sh
+
+# Example: Auto-fix registry issues
+~/.claude/skills/worktree-manager/scripts/sync.sh --fix
 ```
 
 ### release-ports.sh
@@ -569,8 +624,8 @@ Location: `~/.claude/skills/worktree-manager/config.json`
 ```json
 {
   "terminal": "ghostty",
-  "shell": "bash",
-  "claudeCommand": "claude --dangerously-skip-permissions",
+  "shell": "fish",
+  "claudeCommand": "claude",
   "portPool": {
     "start": 8100,
     "end": 8199
@@ -581,10 +636,7 @@ Location: `~/.claude/skills/worktree-manager/config.json`
 }
 ```
 
-**Options:**
-- **terminal**: `ghostty`, `iterm2`, `tmux`, `wezterm`, `kitty`, `alacritty`
-- **shell**: `bash`, `zsh`, `fish` (adjust syntax in claudeCommand if using fish)
-- **claudeCommand**: The command to launch Claude Code (default uses `--dangerously-skip-permissions` for autonomous operation)
+**Terminal options**: `ghostty`, `iterm2`, `tmux`, `wezterm`, `kitty`, `alacritty`
 
 ---
 

@@ -1,15 +1,15 @@
 {
   "terminal": "ghostty",
-  "shell": "bash",
-  "claudeCommand": "claude --dangerously-skip-permissions",
+  "shell": "fish",
+  "claudeCommand": "cc",
   "portPool": {
     "start": 8100,
     "end": 8199
   },
   "portsPerWorktree": 2,
-  "worktreeBase": "~/tmp/worktrees",
+  "worktreeBase": "~/.archon/worktrees",
   "registryPath": "~/.claude/worktree-registry.json",
-  "defaultCopyDirs": [".agents", ".env.example"],
+  "defaultCopyDirs": [".agents", ".env.example", ".env"],
   "healthCheckTimeout": 30,
   "healthCheckRetries": 6
 }
